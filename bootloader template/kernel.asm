@@ -4,21 +4,24 @@ jmp 0x0000:start
 data:
 	playerPosition: dw 0
     tablePosition: dw 0
-    enemyPosition: dw 0
-    tempEnemyPosition: dw 0
+    enemyPosition: times 5 dw 0
+    arrayLenght equ 2
+    counter: db 0
     endGame: db "Game end", 0
     len equ endGame - $
 	;Dados do projeto...
 
 start:
+    call changeFontSize
     xor ax, ax
     mov ds, ax
     mov es, ax
     mov bl, 0
     mov bh, 0
-    mov word [playerPosition], 0x2000
+    mov word [playerPosition], 0
     mov word [tablePosition], 1
     mov word [enemyPosition], 0
+    mov byte[counter], 0
     call makegrid
     ;mov al, 51h
     ;call putchar
@@ -30,6 +33,8 @@ makegrid:
     
     .waitForInput:
         call clear
+        ;colocando a posição de memória de enemyPosition em si
+        mov si, enemyPosition
         call enemyMovement
         ;int 16h com AH = 1 checa no buffer do teclado para ver se alguma tecla foi apertada, se
         ;o buffer estiver vazio ZF é setado, se não estiver vazio ZF é resetado.
@@ -67,34 +72,42 @@ makegrid:
             cmp word[playerPosition], 0x1000
             je .gridBegin
             shr word [playerPosition], 1
+            mov si, enemyPosition
+            mov cx, arrayLenght
             jmp .gridBegin
         .dPressed:
             ;compara se já esta no limite direito.
             cmp word[playerPosition], 0x4000
             je .gridBegin
             shl word [playerPosition], 1
+            mov si, enemyPosition
+            mov cx, arrayLenght
             jmp .gridBegin
             
 
     .gridBegin:
        call putchar
+       ;checa se passou de 15 bits, se sim incremente SI para ir para a próxima posição do array
+       call incrementCounter
        inc bl
        shl word[tablePosition], 1
-       cmp  bl, 2
+       cmp  bl, 4
        jle .gridBegin
        call jumpLine
        mov bl, 0
        inc bh
-       cmp bh, 4
+       cmp bh, 14
        jle .gridBegin
        mov bh, 0
        mov word[tablePosition], 1
        call delay
+       call resetCounters
        jmp .waitForInput
 
 delay:
     ;faz o computador esperar o tempo determinado por CXDX, o intervalo de tempo utilizado está em microsegundos
     ;mov CX, 7
+    mov AL, 0
     mov DX, 0x4120
     mov AH, 0x86
     int 15h
@@ -109,7 +122,7 @@ clear:
 enemyMovement:
     ;movimento do inimigo é feito por operação bitwise, para andar para baixo temos que mover
     ;o bit setado pela mesma quantidade de colunas que a grid tem, nesse caso é 3.
-    cmp word[enemyPosition], 0 
+    cmp word[si], 0 
     je .notSpawned
     jne .spawned
     .notSpawned:
@@ -118,7 +131,9 @@ enemyMovement:
         mov word[enemyPosition], dx
         ret
     .spawned:
-        shl word[enemyPosition], 3
+        ;shift left na segunda posição do array para andar para frente antes de colocar as últimas posições do primeiro
+        ;array nos bits iniciais do segundo array.
+        call enemyMovementChangeArray
         mov ax, 0x3F
         and ax, word[enemyPosition]
         cmp ax, 0
@@ -129,15 +144,57 @@ enemyMovement:
             or word[enemyPosition], dx
             ret
     .modulus:
-        ;interrupt 1Ah com AH = 0 pega o tempo do sistema pelo número de ticks do clock desde a meia noite, podemos usar isso e dividir por 6
-        ;para gerar um número random de 0 a 6 e usar isso para saber qual tipo de spawn nós queremos.
+        ;interrupt 1Ah com AH = 0 pega o tempo do sistema pelo número de ticks do clock desde a meia noite, podemos usar 
+        ;isso utilizar em conjunto com um and com um valor n²-1 para preencher um número random n para colocar os inimigos
+        ;na tela.
         ;http://www.ctyme.com/intr/rb-2271.htm <- source
         mov AH, 0x00
         int 1Ah
-        mov ax, dx
-        xor dx, dx
-        mov cx, 6
-        div cx
+        and dx, 31
+        ret
+
+enemyMovementChangeArray:
+
+    shl word[enemyPosition + 8], 5
+    mov ax, 0x7C00
+    and ax, word[enemyPosition + 6]
+    shr ax, 10
+    add word[enemyPosition + 8], ax
+
+    shl word[enemyPosition + 6], 5
+    mov ax, 0x7C00
+    and ax, word[enemyPosition + 4]
+    shr ax, 10
+    add word[enemyPosition + 6], ax
+
+    shl word[enemyPosition + 4], 5
+    mov ax, 0x7C00
+    and ax, word[enemyPosition + 2]
+    shr ax, 10
+    add word[enemyPosition + 4], ax
+
+    
+    shl word[enemyPosition + 2], 5
+    mov ax, 0x7C00
+    and ax, word[enemyPosition]
+    shr ax, 9
+    add word[enemyPosition + 2], ax
+
+    shl word[enemyPosition], 5
+    ret
+
+incrementCounter:
+    inc byte[counter]
+    cmp byte[counter], 0xF
+    je .incrementSI
+    ret
+    .incrementSI:
+        ;vá para a próxima posição do array, temos que adicionar a quantidade de bytes que contem em cada posição de array
+        ;em SI
+        add SI,2
+        ;resetando table position para andar as 15 primeiras casas do próximo array.
+        mov word[tablePosition], 1
+        mov byte[counter], 0
         ret
 
 collision:
@@ -166,7 +223,7 @@ putchar:
 
     ;se player não foi encontrado, faça o mesmo teste para inimigos
     playerNotEncountered:
-        mov ax, word[enemyPosition]
+        mov ax, word[si]
         and ax, word[tablePosition]
         cmp ax, 0
         mov ah, 0Eh
@@ -197,6 +254,16 @@ jumpLine:
     int 10h
     mov al, 13
     int 10h
+    ret
+
+resetCounters:
+    mov byte[counter], 0
+    ret
+
+changeFontSize:
+    mov ax, 1104h
+    mov bh, 0
+    int 0x10
     ret
 
 ;colocando a mensagem na tela.
