@@ -261,7 +261,7 @@ resetCounters:
     ret
 
 changeFontSize:
-    mov ax, 1104h
+    mov ax, 1102h
     mov bh, 0
     int 0x10
     ret
