@@ -5,7 +5,9 @@ data:
 	playerPosition: dw 0
     tablePosition: dw 0
     enemyPosition: times 5 dw 0
-    arrayLenght equ 2
+    bulletPosition: times 5 dw 0
+    whichArray: db 0
+    bulletOffset: dd 0
     counter: db 0
     endGame: db "Game end", 0
     len equ endGame - $
@@ -18,7 +20,7 @@ start:
     mov es, ax
     mov bl, 0
     mov bh, 0
-    mov word [playerPosition], 0
+    mov word [playerPosition], 0x2000
     mov word [tablePosition], 1
     mov word [enemyPosition], 0
     mov byte[counter], 0
@@ -32,6 +34,11 @@ start:
 makegrid:
     
     .waitForInput:
+        ;usando um ponteiro (bulletOffset) para guardar a posição de memória de bulletPosition que será usado depois para 
+        ;ver em qual array do bulletPosition nós estamos checando.
+        mov dword [bulletOffset], bulletPosition
+        ;clear whichArray and bullet array
+        mov byte[whichArray], 0
         call clear
         ;colocando a posição de memória de enemyPosition em si
         mov si, enemyPosition
@@ -54,8 +61,8 @@ makegrid:
         ;https://www.win.tue.nl/~aeb/linux/kbd/scancodes-1.html
         xor ah, ah
         int 16h
-        cmp ah, 0x11
-        je .wPressed
+        cmp ah, 0x39
+        je .spacePressed
         cmp ah, 0x1F
         je .sPressed
         cmp ah, 0x1E
@@ -63,7 +70,9 @@ makegrid:
         cmp ah, 0x20
         je .dPressed
         jmp .waitForInput
-        .wPressed:
+        .spacePressed:
+            mov si, enemyPosition
+            call shootBullet
             jmp .gridBegin
         .sPressed:
             jmp .gridBegin
@@ -73,7 +82,6 @@ makegrid:
             je .gridBegin
             shr word [playerPosition], 1
             mov si, enemyPosition
-            mov cx, arrayLenght
             jmp .gridBegin
         .dPressed:
             ;compara se já esta no limite direito.
@@ -81,7 +89,6 @@ makegrid:
             je .gridBegin
             shl word [playerPosition], 1
             mov si, enemyPosition
-            mov cx, arrayLenght
             jmp .gridBegin
             
 
@@ -106,7 +113,7 @@ makegrid:
 
 delay:
     ;faz o computador esperar o tempo determinado por CXDX, o intervalo de tempo utilizado está em microsegundos
-    ;mov CX, 7
+    mov CX, 5
     mov AL, 0
     mov DX, 0x4120
     mov AH, 0x86
@@ -153,27 +160,20 @@ enemyMovement:
         and dx, 31
         ret
 
+;essa função é o que faz os bits de todos os arrays do enemyPosition darem o shift left ao mesmo tempo.
 enemyMovementChangeArray:
 
-    shl word[enemyPosition + 8], 5
-    mov ax, 0x7C00
-    and ax, word[enemyPosition + 6]
-    shr ax, 10
-    add word[enemyPosition + 8], ax
+    mov ecx, 8
+    REPEAT:
+        shl word[enemyPosition + ecx], 5
+        mov ax, 0x7C00
+        and ax, word[enemyPosition + ecx - 2]
+        shr ax, 10
+        add word[enemyPosition + ecx], ax
+        sub ecx, 2
+        cmp ecx, 2
+        jne REPEAT
 
-    shl word[enemyPosition + 6], 5
-    mov ax, 0x7C00
-    and ax, word[enemyPosition + 4]
-    shr ax, 10
-    add word[enemyPosition + 6], ax
-
-    shl word[enemyPosition + 4], 5
-    mov ax, 0x7C00
-    and ax, word[enemyPosition + 2]
-    shr ax, 10
-    add word[enemyPosition + 4], ax
-
-    
     shl word[enemyPosition + 2], 5
     mov ax, 0x7C00
     and ax, word[enemyPosition]
@@ -181,6 +181,44 @@ enemyMovementChangeArray:
     add word[enemyPosition + 2], ax
 
     shl word[enemyPosition], 5
+
+    call collisionBullet
+    mov ecx, 0
+    bulletMovementChangeArray:
+        shr word[bulletPosition], 5
+        mov ax, 0x1F
+        and ax, word[bulletPosition + 2]
+        shl ax, 10
+        add word[bulletPosition], ax
+        add ecx, 2
+        
+        shr word[bulletPosition + 2], 5
+        mov ax, 0x1F
+        and ax, word[bulletPosition + 4]
+        shl ax, 10
+        add word[bulletPosition + 2], ax
+        add ecx, 2
+
+        shr word[bulletPosition + 4], 5
+        mov ax, 0x1F
+        and ax, word[bulletPosition + 6]
+        shl ax, 10
+        add word[bulletPosition + 4], ax
+        add ecx, 2
+
+        shr word[bulletPosition + 6], 5
+        mov ax, 0x1F
+        and ax, word[bulletPosition + 8]
+        shl ax, 10
+        add word[bulletPosition + 6], ax
+        add ecx, 2
+
+        
+        shr word[bulletPosition + 8], 5
+        call collisionBullet
+        ret
+
+
     ret
 
 incrementCounter:
@@ -192,16 +230,18 @@ incrementCounter:
         ;vá para a próxima posição do array, temos que adicionar a quantidade de bytes que contem em cada posição de array
         ;em SI
         add SI,2
+        add dword[bulletOffset], 2
         ;resetando table position para andar as 15 primeiras casas do próximo array.
         mov word[tablePosition], 1
         mov byte[counter], 0
+        inc byte[whichArray]
         ret
 
 collision:
 
     ;se o bit setado do playerPosition é igual ao bit setado do enemyPosition, houve colisão
     mov ax, word[playerPosition]
-    and ax, word[enemyPosition]
+    and ax, word[enemyPosition + 8]
     cmp ax, 0
     je notCollided
     jne collided
@@ -215,6 +255,9 @@ collision:
 
 
 putchar:
+    ;se o array de inimigos que estamos checando não é o último array, pule para player não encontrado
+    cmp byte[whichArray], 4
+    jne playerNotEncountered
     ;se o bit setado do playerPosition é igual ao bit setado do tablePosition, coloque @ na tela
     mov ax, word[playerPosition]
     cmp ax, word[tablePosition]
@@ -226,19 +269,36 @@ putchar:
         mov ax, word[si]
         and ax, word[tablePosition]
         cmp ax, 0
-        mov ah, 0Eh
         je enemyNotEncountered
         jne enemyEncountered
 
         enemyEncountered:
+        ;call collisionBullet
+        mov ah, 0x0E
         mov al, 118
         int 10h
         ret
 
         enemyNotEncountered:
-        mov al, 46
-        int 10h
-        ret
+        mov ecx, [bulletOffset]
+        mov ax, [ecx]
+        and ax, word[tablePosition]
+        cmp ax, 0
+        je bulletNotEncountered
+        jne bulletEncountered
+
+            bulletEncountered:
+                mov ah, 0x0E
+                mov al, 124
+                int 0x10
+                ret
+
+            bulletNotEncountered:
+                mov ah, 0Eh
+                mov al, 46
+                int 10h
+                ret
+        
 
     playerEncountered:
         call collision
@@ -261,10 +321,34 @@ resetCounters:
     ret
 
 changeFontSize:
-    mov ax, 1102h
+    mov ax, 0x1102
     mov bh, 0
     int 0x10
     ret
+
+shootBullet:
+    mov ax, word[playerPosition]
+    shr ax, 5
+    xor word[bulletPosition + 8], ax
+    ;call printBullet
+    ret
+
+collisionBullet:
+    mov ecx, 8
+    compareArrays:  
+        mov ax, [enemyPosition + ecx]
+        and ax, [bulletPosition + ecx]
+        cmp ax, 0
+        jne killEnemy  
+        je subtractCounter     
+        killEnemy:
+            xor [bulletPosition + ecx], ax
+            xor [enemyPosition + ecx], ax
+        subtractCounter:
+            sub ecx, 2
+            jnz compareArrays
+            ret
+
 
 ;colocando a mensagem na tela.
 end1:
