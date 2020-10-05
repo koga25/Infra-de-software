@@ -9,6 +9,7 @@ data:
     whichArray: db 0
     bulletOffset: dd 0
     counter: db 0
+    bulletCounter: db 0
     endGame: db "Game end", 0
     len equ endGame - $
 	;Dados do projeto...
@@ -34,6 +35,8 @@ start:
 makegrid:
     
     .waitForInput:
+        ;colocando um limite para o uso do tiro, o jogador usa apenas 1 tiro a cada 4 ticks
+        inc byte[bulletCounter]
         ;usando um ponteiro (bulletOffset) para guardar a posição de memória de bulletPosition que será usado depois para 
         ;ver em qual array do bulletPosition nós estamos checando.
         mov dword [bulletOffset], bulletPosition
@@ -71,6 +74,9 @@ makegrid:
         je .dPressed
         jmp .waitForInput
         .spacePressed:
+            cmp byte[bulletCounter], 4
+            jl .gridBegin
+            mov byte[bulletCounter], 0
             mov si, enemyPosition
             call shootBullet
             jmp .gridBegin
@@ -78,14 +84,14 @@ makegrid:
             jmp .gridBegin
         .aPressed:
             ;compara se já esta no limite esquerdo.
-            cmp word[playerPosition], 0x1000
+            cmp word[playerPosition], 0x800
             je .gridBegin
             shr word [playerPosition], 1
             mov si, enemyPosition
             jmp .gridBegin
         .dPressed:
             ;compara se já esta no limite direito.
-            cmp word[playerPosition], 0x4000
+            cmp word[playerPosition], 0x8000
             je .gridBegin
             shl word [playerPosition], 1
             mov si, enemyPosition
