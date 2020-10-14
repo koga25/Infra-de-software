@@ -3,7 +3,7 @@
 #include <unistd.h>
 #include <pthread.h>
 
-#define LIMIT 20000000
+#define LIMIT 1000000
 #define TRUE 1
 #define FALSE 0
 
