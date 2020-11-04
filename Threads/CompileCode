@@ -1,0 +1,1 @@
+gcc -g TerceiraQuestao.c -o TerceiraQuestao -lpthread
