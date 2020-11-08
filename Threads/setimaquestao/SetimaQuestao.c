@@ -8,7 +8,7 @@
 #define TRUE 1
 #define FALSE 0
 
-#define MAXBUFFERSIZE 2000000
+#define MAXBUFFERSIZE 20000000
 
 enum RGB
 {
@@ -17,22 +17,20 @@ enum RGB
     BLUE = 2
 };
 
+//apenas para poder guardar quando cada thread começa e qual a posição do array temporário rgbValues o thread vai colocar.
 typedef struct s_helper
 {
     size_t offsetOfSpecificThread;
-    u_int8_t positionOfArray;
+    size_t positionOfArray;
 }helper;
 
 u_int8_t* rgbValues;
 size_t rgbQuantityPerthread;
-size_t offset = 0;
 size_t width = 0;
 size_t heigth = 0;
 size_t bufferLength;
 size_t beginningOfColors;
-size_t rgbQuantity = 0; // every R+G+B numbers that exist in the ppm file
-unsigned char string[200];
-int i = 0;
+size_t rgbQuantity = 0; //todos os números R + G + B da imagem.
 unsigned char buffer[MAXBUFFERSIZE];
 unsigned char outFile[MAXBUFFERSIZE];
 
@@ -44,7 +42,7 @@ int main()
     int c;
     pthread_t* newThread;
 
-    FILE* ppmFile = fopen("/home/lucas/Downloads/Threads/setimaquestao/Tiny6pixel.ppm", "rb");
+    FILE* ppmFile = fopen("/home/lucas/Downloads/Threads/setimaquestao/snail.ascii.ppm", "rb");
 
     if(ppmFile == NULL)
     {
@@ -56,68 +54,68 @@ int main()
     bufferLength = ftell(ppmFile);
     rewind(ppmFile);
 
+    //ler até chegar no EOF
     for(size_t i = 0; (c = getc(ppmFile)) != EOF; i++)
     {
         buffer[i] = c;
     }
-    //put EOF into 
+    //não esquecer de colocar o EOF no array
     buffer[bufferLength] = c;
 
     rewind(ppmFile);
 
-    /*while((c = getc(ppmFile)) != EOF)
-    {
-        string[i++] = c;
-    }*/
 
-    //read until the second \n char, then next line is the width and height of image
+    //ler até o segundo \n, a próxima linha é a largura e a altura da imagem 
     for(u_int8_t i = 0; i < 2; i++)
     {
-        while((c = getc(ppmFile)) != EOF && c != '\n');
+        while((c = getc(ppmFile)) != '\n');
     }
 
-    //get width of image
-    while((c = getc(ppmFile)) != EOF && c != ' ')
+    //Pegando a largura da imagem
+    while((c = getc(ppmFile)) != ' ' && c > 47 && c < 58)
     {
-        //add one decimal digit to width
-        width *= 10; 
-        //then add the number to the decimal digit
-        width += c - 48;
+        if(c > 47 && c < 58)
+        {
+            width *= 10; 
+            width += c - 48; 
+        }
     }
 
-    //get heigth of image
-    while((c = getc(ppmFile)) != EOF && c != '\n')
+    //Pegando a altura da imagem.
+    while((c = getc(ppmFile)) != '\n')
     {
-        //add one decimal digit to heigth
-        heigth *= 10; 
-        //then add the number to the decimal digit
-        heigth += c - 48;
+        if(c > 47 && c < 58)
+        {
+            heigth *= 10; 
+            heigth += c - 48;
+        }
     }
 
-    //get the position of the file that begins to code the colors
-    while((c = getc(ppmFile)) != EOF && c != '\n');
-    //getc(ppmFile);
+    //A próxima linha é onde começa os números RGB.
+    while((c = getc(ppmFile)) != '\n');
     beginningOfColors = ftell(ppmFile);
 
-    //get how many R + G + B numbers exist;
-    /*while((c = getc(ppmFile)) != EOF)
-    {
-        if(c == ' ' || c == '\n')
-            rgbQuantity++;
-    }*/
+    /*A quantidade de pixels que a tela tem é largura x altura. cada pixel tem 3 cores RGB, então só precisamos multiplicar
+    o resultado por três para pegar o número total de cores RGB.*/
     rgbQuantity = width*heigth*3;
 
     fclose(ppmFile);
 
+    //vendo qual entre a largura e a altura é maior.
     size_t widthOrHeigth =  (size_t)(max((void*) width, (void*) heigth));
     size_t threadQuantity = rgbQuantity/ widthOrHeigth;
-    //creating a pointer to pointer of u_int8_t to save the rgb values to create the
-    //file later, need to do this because the size of the file can change.
+    
+    /*como o tamanho do número de cada RGB em ASCII é variável, (por exemplo, 255 são 3 caracteres, 76 são 2 caracteres)
+    não tem como achar um espaçamento por bytes que vá garantir que pegaremos todos os caracteres de um número. A solução
+    é achar a quantidade de números rgb totais e dividir o trabalho para as threads*Como também não sabemos qual a
+    posição do array buffer que cada thread vai começar, é preciso implementar um contador que chegue até a o offset
+    de números RGB que precisamos. Implementamos isso com um contador que vai contar quantos caracteres ' ' ou '\n' até
+    chegar na variavel offsetOfSpecificThread, pois cada número é separado por um ou mais caracteres ' ' e/ou um caracter
+    '\n'*/
     rgbQuantityPerthread = rgbQuantity/threadQuantity;
-    rgbValues = (u_int8_t*) calloc (rgbQuantity, sizeof(u_int8_t));
 
-    //rounding up
-    offset = ((bufferLength - beginningOfColors) + (threadQuantity - 1))/threadQuantity;
+    //array temporário que vai guardar todos os valores rgb modificados em ordem.
+    rgbValues = (u_int8_t*) calloc (rgbQuantity, sizeof(u_int8_t));
     
     newThread = (pthread_t*) malloc (sizeof(pthread_t) * threadQuantity);
     for(u_int64_t i = 0; i < threadQuantity; i++)
@@ -128,64 +126,63 @@ int main()
         pthread_create(&newThread[i], NULL, ChangeColors, (void*) helperVariable);
     }
 
-
     for(u_int64_t i = 0; i < threadQuantity; i++)
         pthread_join(newThread[i], NULL);
 
-        
-
-    
-
-    int bufferPosition = beginningOfColors;
+    /*começo da transferência do array temporário de rgbs para o array buffer que irá ser utilizado para o output.
+    bufferPosition indica a posição atual dos valores RGB, pixels vai ser utilizado para colocar os caracteres ' '
+    e '\n' nas novas posições e o photoSize é o novo tamanho do arquivo, pois ao mudar os valores RGB a quantidade de
+    caracter por valor RGB pode ser modificado, modificando assim o tamanho do arquivo.*/
+    size_t bufferPosition = beginningOfColors;
     int pixels = 0;
     size_t photoSize = beginningOfColors + 1;
     for(size_t i = 0; i < rgbQuantity; i++)
     {
+        //pegando o valor rgb e colocando os caracteres nas posições corretas.
         u_int8_t number;
-            number = rgbValues[i++] + rgbValues[i++] + rgbValues[i];
-            
-            for(size_t j = 0; j < 3; j++)
+        number = rgbValues[i++] + rgbValues[i++] + rgbValues[i];
+        for(size_t j = 0; j < 3; j++)
+        {
+            u_int8_t firstNonZero = FALSE;
+            for(size_t k = 0; k < 3; k++)
             {
-                u_int8_t firstNonZero = FALSE;
-                for(size_t k = 0; k < 3; k++)
-                {
-                    u_int8_t tempInt = number/(pow(10, 3 - 1-k));
-                    tempInt = tempInt%10;
-                    if(tempInt == 0 && firstNonZero == FALSE)
-                    {
-                        buffer[bufferPosition] = 48;
-                    }
-                    else
-                    {
-                        buffer[bufferPosition] = tempInt + 48;
-                        number/10;
-                        bufferPosition++;
-                        firstNonZero = TRUE;
-                        photoSize++;
-                        //firstNonZero = TRUE;
-                    }   
-                }
-                if(firstNonZero == FALSE)
+                u_int8_t tempInt = number/(pow(10, 3 - 1-k));
+                tempInt = tempInt%10;
+                if(tempInt == 0 && firstNonZero == FALSE)
                 {
                     buffer[bufferPosition] = 48;
-                    bufferPosition++;
-                    photoSize++;
-                }
-                if(pixels == 11)
-                {
-                    buffer[bufferPosition] = '\n';
-                    pixels = 0;
-                    photoSize++;
                 }
                 else
                 {
-                    buffer[bufferPosition] = ' ';
-                    pixels++;
+                    buffer[bufferPosition] = tempInt + 48;
+                    number/10;
+                    bufferPosition++;
+                    firstNonZero = TRUE;
                     photoSize++;
-                }
-                bufferPosition++;
-                firstNonZero = FALSE;
+                    //firstNonZero = TRUE;
+                }   
             }
+            if(firstNonZero == FALSE)
+            {
+                buffer[bufferPosition] = 48;
+                bufferPosition++;
+                photoSize++;
+            }
+            if(pixels == 11)
+            {
+                buffer[bufferPosition] = '\n';
+                pixels = 0;
+                photoSize++;
+            }
+            else
+            {
+                buffer[bufferPosition] = ' ';
+                pixels++;
+                photoSize++;
+            }
+            bufferPosition++;
+            firstNonZero = FALSE;
+        }
     }
 
     FILE* out = fopen("out.ppm", "w");
@@ -208,19 +205,20 @@ int main()
 void* ChangeColors(void* arg)
 {
     helper* helperVariable = (helper*) arg; 
-
-    //counting ultil we arrive to the position of the pixels for this thread
     size_t counter = 0;
     size_t startPosition = 0;
+
+    //aqui contaremos até chegar a posição do número rgb que queremos para a thread.
     for(counter; counter < helperVariable->offsetOfSpecificThread; counter++)
     {
-        while(buffer[beginningOfColors + startPosition] != ' ' /*&& buffer[beginningOfColors + startPosition] != '\n'*/)
+        while(buffer[beginningOfColors + startPosition] != ' ' && buffer[beginningOfColors + startPosition] != '\n')
             startPosition++;
-        //incrementing 1 to go to the next number       
+             
         startPosition++;
     }
 
-    u_int8_t rgb = rgb = (counter%3);
+
+    u_int8_t rgb = (counter%3);
     float multiplyValue;
     switch(rgb)
     {
@@ -234,50 +232,30 @@ void* ChangeColors(void* arg)
             multiplyValue = 0.11;
             break;  
     }
-    u_int8_t valuesAssigned = 0;
-    for(size_t i = 0; valuesAssigned < rgbQuantityPerthread || buffer[beginningOfColors + startPosition + i] == EOF ; i++)
+
+    size_t valuesAssigned = 0;
+    for(size_t i = 0; valuesAssigned < rgbQuantityPerthread; i++)
     {
         unsigned char tempChar = buffer[beginningOfColors + startPosition + i];
-        if(tempChar != ' ' && tempChar != '\n')
+        if(tempChar > 47 && tempChar < 58)
         {
-            //we have three different chars to modify in the RGB 
-            
-            //we are reading from a ascii file, so if we have a value of 232 in the file
-            //it uses 3 character spaces for every number ('2', '3', '2'), so we have to
-            //parse to a number, modify the value, and then parse back.
-            
-            //adding first digit
+
             u_int8_t number = buffer[beginningOfColors + startPosition + i] - 48;
 
-            u_int8_t numberLength = 1;
             for(size_t j = 1; j < 3; j++)
             {
                 i++;
-                //check if we have another digit.
-                unsigned char tempChar2 = buffer[beginningOfColors + startPosition + i];
+                u_int8_t tempChar2 = buffer[beginningOfColors + startPosition + i];
                 if(tempChar2 == ' ' || tempChar2 == '\n')
-                    break; //if don't have, exit loop
+                    break;
                 
-                //if we have, add digit to number
                 number *= 10;
                 number += tempChar2 - 48;
-                numberLength++;
             }
-            //printf("adding number: (%d to %f)  to position: [%ld]  of array,  of:%d\n", number, number * multiplyValue, counter+valuesAssigned, rgb);
-            
-            //multiplying value
             number *= multiplyValue;
             rgbValues[counter + valuesAssigned] = number;
             valuesAssigned++;
-            /*//parsing number into the string
-            for(size_t j = 0; j < numberLength; j++)
-            {
-                u_int8_t tempInt = number/(pow(10, numberLength - 1-j));
-                tempInt = tempInt%10;
-                rgbValues[helperVariable->positionOfArray][i] = tempInt + 48;
-                number/10;
-                i++;
-            }*/
+
             switch(rgb)
             {
                 case RED:
@@ -294,9 +272,8 @@ void* ChangeColors(void* arg)
                     break;  
             }
         }
-        
     }
-    //free(arg);
+    free(arg);
     pthread_exit(NULL);
 }
 
