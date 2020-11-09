@@ -91,7 +91,7 @@ void* consumer(void* arg)
       if(blockQueue->statusBuffer < 0)
          exit(1);
 
-      tprintf("Consumer[%i] initiating putBlockingQueue, node quantity [%i]\n", position[0], blockQueue->statusBuffer);
+      printf("Consumer[%i] initiating putBlockingQueue, node quantity [%i]\n", position[0], blockQueue->statusBuffer);
       value = rand();
       putBlockingQueue(blockQueue, value);
       sem_post(&full);
