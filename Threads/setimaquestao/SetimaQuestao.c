@@ -42,7 +42,7 @@ int main()
     int c;
     pthread_t* newThread;
 
-    FILE* ppmFile = fopen("/home/lucas/Downloads/Threads/setimaquestao/ppm2.ppm", "rb");
+    FILE* ppmFile = fopen("/home/lucas/Downloads/Threads/setimaquestao/test_muleflowers.ppm", "rb");
 
     if(ppmFile == NULL)
     {
@@ -71,7 +71,14 @@ int main()
         while((c = getc(ppmFile)) != '\n');
     }
 
-    //Pegando a largura da imagem
+    /*Pegando a largura da imagem, precisamos colocar esse primeiro while pois alguns arquivos estão com ' ' antes dos
+    números de largura e altura*/
+    while((c = getc(ppmFile)) == ' ')
+    {
+
+    }
+    width *= 10; 
+    width += c - 48; 
     while((c = getc(ppmFile)) != ' ')
     {
         if(c > 47 && c < 58)
