@@ -42,7 +42,7 @@ int main()
     int c;
     pthread_t* newThread;
 
-    FILE* ppmFile = fopen("/home/lucas/Downloads/Threads/setimaquestao/snail.ascii.ppm", "rb");
+    FILE* ppmFile = fopen("/home/lucas/Downloads/Threads/setimaquestao/ppm2.ppm", "rb");
 
     if(ppmFile == NULL)
     {
@@ -72,7 +72,7 @@ int main()
     }
 
     //Pegando a largura da imagem
-    while((c = getc(ppmFile)) != ' ' && c > 47 && c < 58)
+    while((c = getc(ppmFile)) != ' ')
     {
         if(c > 47 && c < 58)
         {
@@ -150,7 +150,7 @@ int main()
                 tempInt = tempInt%10;
                 if(tempInt == 0 && firstNonZero == FALSE)
                 {
-                    buffer[bufferPosition] = 48;
+                    //buffer[bufferPosition] = 48;
                 }
                 else
                 {
@@ -189,12 +189,12 @@ int main()
     if(out == NULL)
     {
         printf("Failed to open file\n");
-        exit(0);
+        exit(1);
     }
     if(fwrite(buffer, photoSize, sizeof(unsigned char), out) < 0)
     {
         printf("Failed to write to file\n");
-        exit(0);
+        exit(1);
     }
 
     fclose(out);
@@ -205,16 +205,22 @@ int main()
 void* ChangeColors(void* arg)
 {
     helper* helperVariable = (helper*) arg; 
-    size_t counter = 0;
+    size_t counter;
     size_t startPosition = 0;
 
     //aqui contaremos até chegar a posição do número rgb que queremos para a thread.
-    for(counter; counter < helperVariable->offsetOfSpecificThread; counter++)
+    for(counter = 0; counter < helperVariable->offsetOfSpecificThread; counter++)
     {
         while(buffer[beginningOfColors + startPosition] != ' ' && buffer[beginningOfColors + startPosition] != '\n')
             startPosition++;
-             
+        
         startPosition++;
+
+        //pode ter chance de que o próximo caracter também é ' ' ou '\n', portanto vá até o próximo caracter de número
+        while(buffer[beginningOfColors + startPosition] < 48 || buffer[beginningOfColors + startPosition] > 57)
+            startPosition++;
+
+        
     }
 
 
@@ -252,6 +258,7 @@ void* ChangeColors(void* arg)
                 number *= 10;
                 number += tempChar2 - 48;
             }
+            //printf("number[%i] to [%f] in position [%ld] of array, rgb of [%i]\n", number, number * multiplyValue, counter + valuesAssigned, rgb);
             number *= multiplyValue;
             rgbValues[counter + valuesAssigned] = number;
             valuesAssigned++;
