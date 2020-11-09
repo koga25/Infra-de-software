@@ -3,9 +3,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define MAXBUFFERSIZE 5
-#define CONSUMERSIZE 2
-#define PRODUCERSIZE 2
+#define MAXBUFFERSIZE 50
+#define CONSUMERSIZE 7
+#define PRODUCERSIZE 3
 
 typedef struct elem{
    int value;
@@ -79,7 +79,7 @@ BlockingQueue* newBlockingQueue(unsigned int SizeBuffer)
 void* consumer(void* arg)
 {
    u_int8_t* position = (u_int8_t*)arg;
-   u_int8_t value = 0;
+   
    while(1)
    {
       if(blockQueue->statusBuffer == 0)
@@ -87,34 +87,35 @@ void* consumer(void* arg)
          printf("Consumer [%i] entering sleep, node quantity [%i]\n", position[0],blockQueue->statusBuffer);
          
       }
-      sem_wait(&empty);
+      sem_wait(&full);
       if(blockQueue->statusBuffer < 0)
          exit(1);
 
-      printf("Consumer[%i] initiating putBlockingQueue, node quantity [%i]\n", position[0], blockQueue->statusBuffer);
-      value = rand();
-      putBlockingQueue(blockQueue, value);
-      sem_post(&full);
+      
+      takeBlockingQueue(blockQueue);
+      sem_post(&empty);
    }
 }
 
 void* producer(void* arg)
 {
    u_int8_t* position = (u_int8_t*)arg;
+   u_int8_t value = 0;
    while(1)
    {
-      if(blockQueue->statusBuffer >= MAXBUFFERSIZE)
+      if(blockQueue->statusBuffer > MAXBUFFERSIZE)
       {
          printf("Producer [%i] entering sleep node quantity [%i]\n", position[0], blockQueue->statusBuffer);
          
       }  
-      sem_wait(&full);
+      sem_wait(&empty);
       if(blockQueue->statusBuffer > MAXBUFFERSIZE)
          exit(1);
       
-      printf("Producer[%i] initiating putBlockingQueue, node quantity [%i]\n", position[0], blockQueue->statusBuffer);
-      takeBlockingQueue(blockQueue);
-      sem_post(&empty);
+      //printf("Producer[%i] initiating putBlockingQueue, node quantity [%i]\n", position[0], blockQueue->statusBuffer);
+      value = rand();
+      putBlockingQueue(blockQueue, value);
+      sem_post(&full);
    }
 }
 
@@ -136,6 +137,7 @@ void putBlockingQueue(BlockingQueue* Q, int newValue)
       Q->last = Q->last->prox;
    }
    Q->statusBuffer++;
+   printf("Producer, node quantity [%i]\n", blockQueue->statusBuffer);
    pthread_mutex_unlock(&mutex);
 }
 
@@ -145,6 +147,7 @@ int takeBlockingQueue(BlockingQueue* Q)
    Elem* elem = Q->head;
    Q->head = Q->head->prox;
    Q->statusBuffer--;
+   printf("Consumer, node quantity [%i]\n", blockQueue->statusBuffer);
    pthread_mutex_unlock(&mutex);
    free(elem);
 }
